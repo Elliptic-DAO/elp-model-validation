@@ -1,6 +1,6 @@
-ICP_VALUE = 5
+icp_value = 5
 class Icp(float):
-    current_value = ICP_VALUE
+    current_value = icp_value
     def __init__(self,value):
         self.value = value
     def __add__(self, o):
@@ -102,10 +102,6 @@ class StableSeeker:
         self.protocol.current_collateral+=self.user_collateral # deposit
         self.protocol.fee_available+=self.protocol.percentage_fee*self.user_collateral_eusd+self.protocol.base_fee #fee on deposit
         self.protocol.mint(self.user_collateral_eusd)  
-
-    @property
-    def ratio(self):
-        return self.user_collateral.to_eusd/self.user_collateral_eusd
     
     def withdraw(self,amount:float):
         if amount<=self.user_collateral_eusd:
