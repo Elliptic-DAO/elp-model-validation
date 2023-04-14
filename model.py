@@ -125,9 +125,9 @@ class StableSeeker:
         fee = self.protocol.calculate_fee(amount)
         self.protocol.fee_available+=fee 
         self.current_eusd += amount.to_eusd-fee.to_eusd
-        self.protocol.mint(self.current_eusd) 
+        self.protocol.mint(amount.to_eusd-fee.to_eusd) 
         self.transactions["depose_icp"].append({f'{len(self.transactions["depose_icp"])+1}':{'icp':amount,'eUSD':amount.to_eusd,'icp_value':Icp.current_value}})
-        self.protocol.transactions.append({'action':"depose","user":self,'amount':{'icp':amount,'eusd':amount.to_eusd},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
+        self.protocol.transactions.append({'action':"depose","user":self.__hash__(),'amount':{'icp':amount,'eusd':amount.to_eusd},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
 
         
     def withdraw_icp_from_protocol(self,amount:float):
@@ -140,7 +140,7 @@ class StableSeeker:
             self.current_icp+=Icp((amount-fee)/Icp.current_value)  
             self.protocol.burnt(amount)
             self.transactions["withdraw_icp"].append({f'{len(self.transactions["withdraw_icp"])+1}':{'icp':Icp(amount/Icp.current_value),'eUSD':amount,'icp_value':Icp.current_value}})
-            self.protocol.transactions.append({'action':"withdraw","user":self,'amount':{'icp':Icp(amount/Icp.current_value),'eUSD':amount},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
+            self.protocol.transactions.append({'action':"withdraw","user_id":self.__hash__(),'amount':{'icp':Icp(amount/Icp.current_value),'eUSD':amount},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
         else:
             raise ValueError('Cannot whithdraw more than what you have in your wallet')
 
