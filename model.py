@@ -19,6 +19,7 @@ class Protocol:
         self.fee_available  = fee_available
         self.base_fee=base_fee
         self.supporters = {}
+        self.transactions = []
     @property
     def current_price(self):
         return Icp.current_value
@@ -85,6 +86,7 @@ class CollateralSupporter:
         self.spend_icp=0
         self.spend_dollars = 0
         self.reward_from_protocol = 0
+        self.transactions = dict()
     @property
     def voting_power(self):
         return (self.elp_stacked+self.elp_yield)*self.dissolve_delay*self.age_bonus
@@ -94,6 +96,7 @@ class CollateralSupporter:
             self.protocol.current_collateral += amount
             if self not in self.protocol.supporters:
                 self.protocol.supporters.add(self)
+            self.transactions[f'provide_liq_{len(self.transactions)+1}'] = amount
 
        
 
@@ -105,21 +108,26 @@ class StableSeeker:
         self.current_eusd = 0
         self.current_icp = icp
         self.dollars_spend = icp.to_eusd
+        self.transactions = {"add_to_wallet":[],"depose_icp":[],"withdraw_icp":[]}
 
     def add_icp_to_wallet(self,icp:Icp):
         self.current_icp+=icp
-        self.icp_spend+=icp
         self.dollars_spend+= icp.to_eusd
+        self.transactions["add_to_wallet"].append({f'{len(self.transactions["add_to_wallet"])+1}':{'icp':icp,'eUSD':icp.to_eusd,'icp_value':Icp.current_value}})
 
     def depose_icp_to_protocol(self,amount:Icp):
         if amount>self.current_icp:
             self.add_icp_to_wallet(amount-self.current_icp)
+        
+        self.icp_spend+=amount
         self.current_icp-= amount
         self.protocol.current_collateral+=amount
         fee = self.protocol.calculate_fee(amount)
         self.protocol.fee_available+=fee 
         self.current_eusd += amount.to_eusd-fee.to_eusd
         self.protocol.mint(self.current_eusd) 
+        self.transactions["depose_icp"].append({f'{len(self.transactions["depose_icp"])+1}':{'icp':amount,'eUSD':amount.to_eusd,'icp_value':Icp.current_value}})
+        self.protocol.transactions.append({'action':"depose","user":self,'amount':{'icp':amount,'eusd':amount.to_eusd},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
 
         
     def withdraw_icp_from_protocol(self,amount:float):
@@ -131,6 +139,8 @@ class StableSeeker:
             self.protocol.fee_available+=fee
             self.current_icp+=Icp((amount-fee)/Icp.current_value)  
             self.protocol.burnt(amount)
+            self.transactions["withdraw_icp"].append({f'{len(self.transactions["withdraw_icp"])+1}':{'icp':Icp(amount/Icp.current_value),'eUSD':amount,'icp_value':Icp.current_value}})
+            self.protocol.transactions.append({'action':"withdraw","user":self,'amount':{'icp':Icp(amount/Icp.current_value),'eUSD':amount},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
         else:
             raise ValueError('Cannot whithdraw more than what you have in your wallet')
 

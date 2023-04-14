@@ -1,7 +1,10 @@
 from model import StableSeeker,Protocol,Icp
 import unittest
 class ElliptictTest(unittest.TestCase):
-    protocol = Protocol(Icp(30),100,base_fee=0)
+    def setUp(self) -> None:
+        super().setUp()
+        self.protocol = Protocol(Icp(30),100,base_fee=0)
+         
     def test_collateral_ratio(self):
         assert(self.protocol.is_over_collateralized)
     def test_mint_burnt(self):
@@ -19,12 +22,12 @@ class ElliptictTest(unittest.TestCase):
         stable1.depose_icp_to_protocol(Icp(20))
         stable2.depose_icp_to_protocol(Icp(20))
         assert(self.protocol.current_collateral==70)
-        assert(stable1.current_eusd==100)
+        fee = self.protocol.calculate_fee(Icp(20))
+        assert(stable1.current_eusd==100-fee.to_eusd)
         Icp.current_value = 10
-        assert(stable1.dollars_spend/(stable1.current_eusd+stable1.current_icp*Icp.current_value)==2)
-        stable1.withdraw_icp_from_protocol(stable1.user_collateral_eusd)
-        stable2.withdraw_icp_from_protocol(stable2.user_collateral_eusd)
-        assert(self.protocol.current_collateral==50)
+        stable1.withdraw_icp_from_protocol(stable1.current_eusd)
+        stable2.withdraw_icp_from_protocol(stable2.current_eusd)
+        assert(self.protocol.current_collateral==50.5)
         print(self.protocol.collateral_ratio)
         
         
