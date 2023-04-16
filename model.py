@@ -12,23 +12,25 @@ class Icp(float):
     @property
     def to_eusd(self):
         return self.value*Icp.current_value
+    
+
 class Protocol:
-    def __init__(self,current_collateral:Icp, issued_eusd:float=0,fee_available:Icp=Icp(0),base_fee:float=0):
+    def __init__(self,current_collateral:Icp, eusd_circulating:float=0,fee_available:Icp=Icp(0),base_fee:float=0):
         self.current_collateral = current_collateral
-        self.issued_eusd = issued_eusd
+        self.eusd_circulating = eusd_circulating
         self.fee_available  = fee_available
         self.base_fee=base_fee
+        self.collateral_open_for_position = current_collateral
+        self.levragers = []
         self.supporters = {}
         self.transactions = []
-    @property
-    def current_price(self):
-        return Icp.current_value
+
     @property
     def current_collateral_value(self):
         return self.current_collateral.to_eusd
     @property
     def collateral_ratio(self):
-        return self.current_collateral_value/self.issued_eusd if self.issued_eusd else None
+        return self.current_collateral_value/self.eusd_circulating if self.eusd_circulating else None
 
     @property
     def is_over_collateralized(self):
@@ -41,24 +43,37 @@ class Protocol:
         if self.collateral_ratio>120:
             return 0
         return 2.5*(120-self.collateral_ratio)/40
+    @property
+    def collateral_open_for_position(self):
+        return self.current_collateral-sum([i['stability_assets'] for i in self.levragers ])
+    
+    def close_position(self):
+        while not self.is_over_collateralized and self.levragers:
+            self.levragers.remove(self.levragers.pop(0))
+
+    @property
+    def current_price(self):
+        return Icp.current_value
+    
     def calculate_fee(self,input_amount:Icp)->Icp:
         return Icp(input_amount*self.percentage_fee+self.base_fee) if isinstance(input_amount,Icp) else Icp(Icp(input_amount/Icp.current_value)*self.percentage_fee+self.base_fee)
-
+    
     def burnt(self,amount_eusd):
-        if amount_eusd<=self.issued_eusd:
-            self.issued_eusd-=amount_eusd
+        if amount_eusd<=self.eusd_circulating:
+            self.eusd_circulating-=amount_eusd
+        else:
+            self.eusd_circulating = 0
     def mint(self,amount_eusd):
-        self.issued_eusd+=amount_eusd
-
+        self.eusd_circulating+=amount_eusd
+    
 
 class Levrager:
     def __init__(self,protocol:Protocol,levrager_assets:Icp,stability_assets:Icp):
         self.protocol = protocol
         self.levrager_assets = levrager_assets
         self.stability_assets = stability_assets
-        self.initial_price = Icp.current_value
-        self.protocol.fee_available+= self.protocol(levrager_assets)
-        self.liquidation_price = self.initial_price*self.stability_assets/(self.stability_assets+self.levrager_assets)
+        self.current_icp = levrager_assets
+        self.position_open = False
 
     @property
     def roi(self):
@@ -67,13 +82,32 @@ class Levrager:
     def to_liquidate(self):
         return self.protocol.current_price<self.liquidation_price
     
-    def __cash_out(self): 
-        return self.protocol.current_collateral - self.stability_assets*(1-(self.initial_price/self.protocol.current_price))
+    
+    def open_position(self,stability_assets):
+        if not self.position_open:
+            self.stability_assets = stability_assets
+            if self.protocol.collateral_open_for_position >= self.stability_assets:
+                self.initial_price = Icp.current_value
+                self.liquidation_price = self.initial_price*self.stability_assets/(self.stability_assets+self.levrager_assets)
+                self.levrage = (self.levrager_assets+self.stability_assets)/self.levrager_assets
+                self.protocol.levragers.append({'user':self,'liquidation_price':self.liquidation_price,'leverage':self.levrage,'stability_assets':self.stability_assets})
+                self.protocol.current_collateral+=self.levrager_assets
+                self.position_open = True
+                self.current_icp = 0
+            else:
+                raise ValueError(f"You can't open this position cause {self.protocol.current_collateral} icp are currently available for leverage")
+            
     def close_position(self):
-        if self.to_liquidate:
-            self.protocol.current_collateral+=self.levrager_assets
+        if self.position_open:
+            if not self.to_liquidate:
+                self.protocol.current_collateral-= self.roi
+                fee = self.protocol.calculate_fee(self.roi)
+                self.protocol.fee_available+=fee
+                self.current_icp += self.roi-fee
+                self.levrager_assets = self.current_icp
+                self.position_open = False
         else:
-            self.__cash_out()
+            raise ValueError('No open position')
     
 
 class CollateralSupporter:
@@ -97,6 +131,7 @@ class CollateralSupporter:
             if self not in self.protocol.supporters:
                 self.protocol.supporters.add(self)
             self.transactions[f'provide_liq_{len(self.transactions)+1}'] = amount
+            self.protocol.transactions.append({'action':"support","user":self.__hash__(),'amount':{'icp':amount,'eusd':amount.to_eusd},'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
 
        
 
