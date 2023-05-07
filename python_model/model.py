@@ -20,7 +20,6 @@ class Protocol:
         self.eusd_circulating = eusd_circulating
         self.fee_available  = fee_available
         self.base_fee=base_fee
-        self.collateral_open_for_position = current_collateral
         self.levragers = []
         self.supporters = {}
         self.transactions = []
@@ -45,12 +44,8 @@ class Protocol:
         return 2.5*(120-self.collateral_ratio)/40
     @property
     def collateral_open_for_position(self):
-        return self.current_collateral-sum([i['stability_assets'] for i in self.levragers ])
+        return self.current_collateral-Icp(sum([i['stability_assets'] for i in self.levragers ]))
     
-    def close_position(self):
-        while not self.is_over_collateralized and self.levragers:
-            self.levragers.remove(self.levragers.pop(0))
-
     @property
     def current_price(self):
         return Icp.current_value
@@ -65,6 +60,25 @@ class Protocol:
             self.eusd_circulating = 0
     def mint(self,amount_eusd):
         self.eusd_circulating+=amount_eusd
+
+    def __close_position(self):
+        while not self.is_over_collateralized and self.levragers:
+            self.levragers.remove(self.levragers.pop(0))
+    @classmethod
+    def check_ratio(func,*args,**kwargs):
+        def wrapper(*args,**kwargs):
+            print('##################')
+            func(*args,**kwargs)
+            if isinstance(args[0],Protocol):
+                args[0].__close_position()
+            elif hasattr(args[0],'protocol'):
+                args[0].protocol.__close_position()
+        return wrapper
+    
+       
+    @property 
+    def current_price(self):
+        return Icp.current_value
     
 
 class Levrager:
@@ -82,7 +96,7 @@ class Levrager:
     def to_liquidate(self):
         return self.protocol.current_price<self.liquidation_price
     
-    
+    @Protocol.check_ratio 
     def open_position(self,stability_assets):
         if not self.position_open:
             self.stability_assets = stability_assets
@@ -96,7 +110,7 @@ class Levrager:
                 self.current_icp = 0
             else:
                 raise ValueError(f"You can't open this position cause {self.protocol.current_collateral} icp are currently available for leverage")
-            
+    @Protocol.check_ratio         
     def close_position(self):
         if self.position_open:
             if not self.to_liquidate:
@@ -125,6 +139,7 @@ class CollateralSupporter:
     def voting_power(self):
         return (self.elp_stacked+self.elp_yield)*self.dissolve_delay*self.age_bonus
 
+    @Protocol.check_ratio 
     def provide_liquidity(self,amount:Icp):
         if amount>0:
             self.protocol.current_collateral += amount
@@ -150,6 +165,7 @@ class StableSeeker:
         self.dollars_spend+= icp.to_eusd
         self.transactions["add_to_wallet"].append({f'{len(self.transactions["add_to_wallet"])+1}':{'icp':icp,'eUSD':icp.to_eusd,'icp_value':Icp.current_value}})
 
+    @Protocol.check_ratio 
     def depose_icp_to_protocol(self,amount:Icp):
         if amount>self.current_icp:
             self.add_icp_to_wallet(amount-self.current_icp)
@@ -164,7 +180,7 @@ class StableSeeker:
         self.transactions["depose_icp"].append({f'{len(self.transactions["depose_icp"])+1}':{'icp':amount,'eUSD':amount.to_eusd,'icp_value':Icp.current_value}})
         self.protocol.transactions.append({'action':"depose","user":self.__hash__(),'amount':{'icp':amount,'eusd':amount.to_eusd},'fee':fee,'collateral':self.protocol.current_collateral,'icp_value':Icp.current_value,'collateral_ration':self.protocol.collateral_ratio})
 
-        
+    @Protocol.check_ratio     
     def withdraw_icp_from_protocol(self,amount:float):
         
         if amount<=self.current_eusd:
