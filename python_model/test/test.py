@@ -1,4 +1,4 @@
-from model import StableSeeker,Protocol,Icp,Levrager
+from python_model.model import StableSeeker,Protocol,Icp
 import unittest
 class ElliptictTest(unittest.TestCase):
     def setUp(self) -> None:
